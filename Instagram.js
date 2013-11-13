@@ -21,43 +21,40 @@ var images          = require('node-images');
 instagram.set('client_id', 'a45382b1044e4e97b9884910f7d270f1');
 instagram.set('secret_id', '9e1adb14869b47e3a4ce4521b177f0ac');
 
-pictureTube = tube();
-pictureTube.setMaxListeners(100);
-pictureTube.pipe(process.stdout);
-
 function login() {
     console.log("I'm going to prompt for your login information and ignore your other options... later.");
 }
 
 function searchTags(tag) {
-    console.log("Searching for tags: " + tag);
-
     instagram.tags.recent({
         name: tag,
         complete: function(data){
+            var convertedBuffers = [];
+            console.log("About to download", data.length, "buffers");
+
             async.each(data, function (item, cb) {
                 item = item.images.standard_resolution.url;
 
                 if (program.ascii) {
                     jpegToASCII(item);
                 }else {
-                    downloadFile(item, function (error, buffer) {
+                    downloadFile(item, function (error, fileBuffer) {
                         if (error) {
                             console.error(error);
                             cb(error);
                         }else {
-                            var imageBuffer = new Buffer(images(buffer).encode('png'));
-                            stream.createReadStream(imageBuffer).pipe(pictureTube);
-
-                            console.log("Calling back");
+                            var imageBuffer = images(fileBuffer).encode('png');
+                            convertedBuffers.push(new Buffer(imageBuffer));
                             cb();
                         }
                     });
                 }
             }, function (error) {
-                console.log("Done");
                 if (error) {
                     console.error(error);
+                }else {
+                    console.log("Finished", convertedBuffers.length, "buffers");
+                    pngToANSI(convertedBuffers);
                 }
             });
         }
@@ -65,11 +62,11 @@ function searchTags(tag) {
 }
 
 // Function to download file using HTTP.get
-function downloadFile(file_url, callback) {
+function downloadFile(fileURL, callback) {
     var options = {
-        host: url.parse(file_url).host,
+        host: url.parse(fileURL).host,
         port: 80,
-        path: url.parse(file_url).pathname
+        path: url.parse(fileURL).pathname
     };
 
     var buffers = [];
@@ -87,8 +84,6 @@ function downloadFile(file_url, callback) {
 };
 
 function searchUsers(username) {
-    console.log("Searching for user: " + username);
-
     instagram.users.search({
         q: username,
         complete: function (data) {
@@ -105,7 +100,37 @@ function jpegToASCII(source) {
     });
 }
 
-// Setup options and parse
+function pngToANSI(buffers) {
+    async.series(generateFunctionsForBuffers(buffers), function (error, results) {
+        console.log("It worked!");
+    });
+}
+
+function generateFunctionsForBuffers(buffers) {
+    var retVal = [];
+    for (var i = 0; i < buffers.length; i++) {
+        var buffer = buffers[i];
+
+        retVal.push(returnFunction(buffer, i));
+    }
+
+    return retVal;
+}
+
+function returnFunction(buffer, number) {
+    return function (callback) {
+        var pictureTube = tube();
+        pictureTube.setMaxListeners(100);
+        var tubePipe = pictureTube.pipe(process.stdout);
+
+        var pipe = stream.createReadStream(buffer).pipe(pictureTube);
+
+        pipe.on('end', function () {
+            callback(null, number);
+        });
+    };
+}
+
 program
     .version('0.0.1')
     .option('-u, --username [username]', 'Set username to view')
