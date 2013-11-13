@@ -1,3 +1,8 @@
+#!/usr/local/bin/node
+
+// Instagram
+var instagram       = require('instagram-node-lib');
+
 // Dependencies
 var fs              = require('fs');
 var url             = require('url');
@@ -13,7 +18,6 @@ var stream          = require('streamifier');
 
 // Image processing
 var tube            = require('picture-tube');
-var instagram       = require('instagram-node-lib');
 var images          = require('node-images');
 
 
@@ -30,7 +34,6 @@ function searchTags(tag) {
         name: tag,
         complete: function(data){
             var convertedBuffers = [];
-            console.log("About to download", data.length, "buffers");
 
             async.each(data, function (item, cb) {
                 item = item.images.standard_resolution.url;
@@ -53,7 +56,6 @@ function searchTags(tag) {
                 if (error) {
                     console.error(error);
                 }else {
-                    console.log("Finished", convertedBuffers.length, "buffers");
                     pngToANSI(convertedBuffers);
                 }
             });
@@ -61,7 +63,6 @@ function searchTags(tag) {
     });
 }
 
-// Function to download file using HTTP.get
 function downloadFile(fileURL, callback) {
     var options = {
         host: url.parse(fileURL).host,
@@ -86,9 +87,16 @@ function downloadFile(fileURL, callback) {
 function searchUsers(username) {
     instagram.users.search({
         q: username,
-        complete: function (data) {
-            console.log(data);
+        complete: function (results) {
+            listResults(results);
         }
+    });
+}
+
+function searchUserId(userId) {
+    instagram.users.recent({ user_id: userId }, function (data) {
+        console.log(data);
+        process.exti();
     });
 }
 
@@ -101,9 +109,7 @@ function jpegToASCII(source) {
 }
 
 function pngToANSI(buffers) {
-    async.series(generateFunctionsForBuffers(buffers), function (error, results) {
-        console.log("It worked!");
-    });
+    async.series(generateFunctionsForBuffers(buffers), null);
 }
 
 function generateFunctionsForBuffers(buffers) {
@@ -120,7 +126,6 @@ function generateFunctionsForBuffers(buffers) {
 function returnFunction(buffer, number) {
     return function (callback) {
         var pictureTube = tube();
-        pictureTube.setMaxListeners(100);
         var tubePipe = pictureTube.pipe(process.stdout);
 
         var pipe = stream.createReadStream(buffer).pipe(pictureTube);
@@ -129,6 +134,33 @@ function returnFunction(buffer, number) {
             callback(null, number);
         });
     };
+}
+
+function listResults(results) {
+    var stdin = process.stdin;
+    var stdout = process.stdout;
+
+    for(var i = 0; i < results.length; i++) {
+        console.log(i + ". ", results[i].username);
+    }
+
+    stdout.write('Which user would you like to see? Enter the number: ');
+
+    stdin.resume();
+    stdin.setEncoding('utf8');
+
+    stdin.once('data', function (data) {
+        if (/\d*/.test(data) && data < results.length) {
+            var input = parseInt(data);
+            searchUserId(results[input].id);
+        }else {
+            listResults(results);
+        }
+    });
+}
+
+function exit() {
+    process.exit();
 }
 
 program
